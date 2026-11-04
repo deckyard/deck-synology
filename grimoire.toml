@@ -1,0 +1,33 @@
+# Grimoire book configuration for the @deckyard/synology documentation.
+
+[book]
+title = "@deckyard/synology"
+description = "A client for the Synology DSM Web API: sessions with 2-step login, system info, and File Station files and folders"
+language = "en"
+src = "docs"
+
+[build]
+out = "site"
+clean = true
+jobs = 0
+
+[html]
+theme = "nordic"
+mode = "auto"
+navPosition = "left"
+tocPosition = "right"
+tocDepth = 3
+sectionNumbers = true
+titleUrl = "https://deckyard.github.io/deck-synology/"
+repoUrl = "https://github.com/deckyard/deck-synology"
+repoLabel = "Source"
+editUrl = "https://github.com/deckyard/deck-synology/edit/main/docs/{path}"
+
+[highlight]
+enabled = true
+
+[search]
+enabled = true
+
+[pdf]
+enabled = false
