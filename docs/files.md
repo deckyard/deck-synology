@@ -41,8 +41,9 @@ synology.delete($c, "/backup/2023");
 ```
 
 `copy`, `move` and `delete` start a background task on the NAS and wait until
-it is done, checking every second (`withPollInterval`). With `overwrite`
-false, an entry of the same name in the destination is an error, never a
+it is done, checking every second (`withPollInterval`) for at most an hour
+(`withWaitTimeout`); when the time runs out the call fails and the task goes
+on in DSM. With `overwrite` false, an entry of the same name in the destination is an error, never a
 silent skip. `delete` removes a folder with everything in it.
 
 ## Upload and download

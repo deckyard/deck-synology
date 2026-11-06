@@ -37,7 +37,8 @@ fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
 | `tls as http.TlsOptions` | certificate checking |
 | `timeoutMs as int` | idle timeout per request; 0 for 30 s |
 | `retries as int` | retries of a read answered 429 or 5xx |
-| `pollMs as int` | interval of a background task's status checks |
+| `pollMs as int` | interval of a background task's status checks; 0 for 1 s |
+| `waitTimeoutMs as int` | how long to wait for a background task; 0 for 1 hour |
 
 ### `ApiInfo`
 
@@ -357,6 +358,7 @@ fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
 | `synology.withTimeout(c, ms)` | `Client` | set the idle timeout |
 | `synology.withRetries(c, n)` | `Client` | retry reads answered 429 or 5xx |
 | `synology.withPollInterval(c, ms)` | `Client` | set the task check interval |
+| `synology.withWaitTimeout(c, ms)` | `Client` | set how long to wait for a task |
 | `synology.withSessionName(c, name)` | `Client` | name the session `login` opens |
 | `synology.withSession(c, sid, synoToken)` | `Client` | reuse a stored session |
 | `synology.withDeviceId(c, deviceId, deviceName)` | `Client` | present a trusted device |

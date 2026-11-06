@@ -61,7 +61,10 @@ export def const PAGE_SIZE as int init 1000;
  * @field tls {http.TlsOptions} certificate checking
  * @field timeoutMs {int} the idle timeout of each request; 0 for 30 s
  * @field retries {int} retries of a read answered 429 or 5xx
- * @field pollMs {int} the delay between checks of a background task
+ * @field pollMs {int} the delay between checks of a background task; 0 for
+ *   1 s
+ * @field waitTimeoutMs {int} how long to wait for a background task; 0 for
+ *   1 hour
  */
 export def struct Client {
     url as string,
@@ -74,7 +77,8 @@ export def struct Client {
     tls as http.TlsOptions,
     timeoutMs as int,
     retries as int,
-    pollMs as int
+    pollMs as int,
+    waitTimeoutMs as int
 };
 
 /**
@@ -739,6 +743,9 @@ def const SHOWN as int init 60;
 # The idle timeout a `timeoutMs` of 0 stands for, as `http.send` has it.
 def const DEFAULT_TIMEOUT_MS as int init 30000;
 
+# How long a `waitTimeoutMs` of 0 waits for a background task: one hour.
+def const DEFAULT_WAIT_MS as int init 3600000;
+
 /**
  * A string fit for an error message: cut to `most` characters, with
  * anything but printable ASCII as `?`, so a message stays one short line
@@ -884,14 +891,29 @@ export func withRetries(c as Client, n as int) {
 }
 
 /**
- * Set how often `copy`, `move` and `delete` ask about their background task.
+ * Set how often `copy`, `move`, `delete`, `createGuest` and `createImage`
+ * ask about their background task.
  *
  * @param c {Client} the client
- * @param ms {int} milliseconds between checks
+ * @param ms {int} milliseconds between checks; 0 for 1 s
  * @return {Client} the changed copy
  */
 export func withPollInterval(c as Client, ms as int) {
     $c.pollMs = $ms;
+    return $c;
+}
+
+/**
+ * Set how long `copy`, `move`, `delete`, `createGuest` and `createImage`
+ * wait for their background task before they fail. The task itself goes on
+ * in DSM.
+ *
+ * @param c {Client} the client
+ * @param ms {int} milliseconds; 0 for the default, 1 hour
+ * @return {Client} the changed copy
+ */
+export func withWaitTimeout(c as Client, ms as int) {
+    $c.waitTimeoutMs = $ms;
     return $c;
 }
 
@@ -958,6 +980,51 @@ func idleMs(c as Client) {
         return DEFAULT_TIMEOUT_MS;
     }
     return $c.timeoutMs;
+}
+
+/**
+ * The delay between checks of a background task. Guards against a `Client`
+ * declared without `client()`, whose `pollMs` 0 would ask without pause; it
+ * waits a second instead.
+ *
+ * @param c {Client} the client
+ * @return {int} milliseconds
+ */
+func pollDelay(c as Client) {
+    if ($c.pollMs <= 0) {
+        return 1000;
+    }
+    return $c.pollMs;
+}
+
+/**
+ * How long to wait for a background task.
+ *
+ * @param c {Client} the client
+ * @return {int} milliseconds; `DEFAULT_WAIT_MS` when `waitTimeoutMs` is 0
+ */
+func waitLimit(c as Client) {
+    if ($c.waitTimeoutMs <= 0) {
+        return DEFAULT_WAIT_MS;
+    }
+    return $c.waitTimeoutMs;
+}
+
+/**
+ * Fail when a background task has run past the client's wait limit.
+ *
+ * @param c {Client} the client
+ * @param what {string} the request that started it, for the error message
+ * @param taskId {string} the task
+ * @param started {time.Time} when the wait began
+ * @throws {Error} kind `"synology"` when the time is up
+ */
+func checkWaited(c as Client, what as string, taskId as string, started as time.Time) {
+    def limit as int init waitLimit($c);
+    if (time.milliseconds(time.sub(time.now(), $started)) >= $limit) {
+        fail($what + ": task " + shown($taskId) + " still running after " +
+            convert.toString($limit) + " ms");
+    }
 }
 
 /**
@@ -1827,15 +1894,19 @@ export func rename(c as Client, path as string, name as string) {
 }
 
 /**
- * Wait for a File Station background task to finish.
+ * Wait for a File Station background task to finish, checking every
+ * `pollDelay` for at most `waitLimit`.
  *
  * @param c {Client} the client
  * @param spec {ApiInfo} the task's API
  * @param version {int} the version it was started with
  * @param taskId {string} the id `start` returned
  * @return {json.Value} the last status
+ * @throws {Error} kind `"synology"` when the task reports errors or the
+ *   time runs out
  */
 func waitFor(c as Client, spec as ApiInfo, version as int, taskId as string) {
+    def started as time.Time init time.now();
     def api as string init $spec.name;
     def d as json.Value init json.decode("null");
     def done as bool init false;
@@ -1848,7 +1919,8 @@ func waitFor(c as Client, spec as ApiInfo, version as int, taskId as string) {
         }
         $done = flag($d, "/finished");
         if (not $done) {
-            time.sleep(time.fromMilliseconds($c.pollMs));
+            checkWaited($c, $api, $taskId, $started);
+            time.sleep(time.fromMilliseconds(pollDelay($c)));
         }
     }
     return $d;
@@ -2219,20 +2291,24 @@ export func guest(c as Client, name as string) {
 }
 
 /**
- * Wait for a Virtual Machine Manager task and return its `task_info`.
+ * Wait for a Virtual Machine Manager task and return its `task_info`,
+ * checking every `pollDelay` (at most 30 s) for at most `waitLimit`.
  *
  * @param c {Client} the client
  * @param what {string} the request that started it, for the error message
  * @param start {json.Value} the `data` of the request that started it
  * @return {json.Value} the finished task's `task_info`
+ * @throws {Error} kind `"synology"` when the reply has no task id or the
+ *   time runs out
  */
 func waitVm(c as Client, what as string, start as json.Value) {
+    def started as time.Time init time.now();
     def taskId as string init field($start, "/task_id");
     if ($taskId == "") {
         fail($what + ": the reply has no task_id");
     }
     # VMM drops a finished task's record after about a minute.
-    def pause as int init $c.pollMs;
+    def pause as int init pollDelay($c);
     if ($pause > 30000) {
         $pause = 30000;
     }
@@ -2242,6 +2318,7 @@ func waitVm(c as Client, what as string, start as json.Value) {
         $d = vmm($c, "Task.Info", "get", {"task_id": $taskId}, true);
         $done = flag($d, "/finish");
         if (not $done) {
+            checkWaited($c, $what, $taskId, $started);
             time.sleep(time.fromMilliseconds($pause));
         }
     }

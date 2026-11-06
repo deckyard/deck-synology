@@ -640,6 +640,44 @@ func testDeleteWaitsForItsTask() {
     }
 }
 
+func testWaitsGiveUp() {
+    def f as Fake init fake([
+        ok('{"taskid":"t1"}'),
+        ok('{"finished":false}'),
+        ok('{"finished":false}'),
+        ok('{"task_id":"t2"}'),
+        ok('{"finish":false}'),
+        ok('{"finish":false}')
+    ]);
+    def c as Client init withWaitTimeout(withPollInterval(session($f), 150), 100);
+    try {
+        delete($c, "/backup/old");
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "SYNO.FileStation.Delete: task \"t1\" still running");
+        testing.assertContains(messageOf($e), "after 100 ms");
+    }
+    try {
+        createImage($c, "x", "iso", "/vm/x.iso", ["s"]);
+        missed();
+    } catch (e) {
+        testing.assertContains(messageOf($e), "Guest.Image create: task \"t2\" still running");
+    }
+    finish($f);
+}
+
+func testWaitSettingsHaveDefaults() {
+    def bare as Client;
+    testing.assertEqual(pollDelay($bare), 1000);
+    testing.assertEqual(waitLimit($bare), DEFAULT_WAIT_MS);
+    def c as Client init client("nas");
+    testing.assertEqual($c.pollMs, 1000);
+    testing.assertEqual($c.waitTimeoutMs, 0);
+    $c = withWaitTimeout(withPollInterval($c, 5), 7000);
+    testing.assertEqual(pollDelay($c), 5);
+    testing.assertEqual(waitLimit($c), 7000);
+}
+
 func testCopyAndMove() {
     def f as Fake init fake([
         ok('{"taskid":"t1"}'),

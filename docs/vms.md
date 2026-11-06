@@ -40,7 +40,8 @@ synology.powerOnGuest($c, $web.name);
 ```
 
 `createImage` imports a file already on the NAS (upload it with `upload`
-first) and waits until VMM is done. `createGuest` copies the image into the
+first) and waits until VMM is done, as long as `withWaitTimeout` allows
+(an hour by default). `createGuest` copies the image into the
 first disk, creates the empty one, waits for the task, and then sets CPUs
 and memory: VMM's `create` takes neither. The machine stays off.
 
