@@ -19,6 +19,6 @@
 # Usage: tools/check-examples.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# Every example needs a Proxmox VE host and a credential, so CI parses them
-# and does not run them.
+# Every example needs a Synology NAS and an account on it (NAS, NAS_USER,
+# NAS_PASSWORD), so CI parses them and does not run them.
 exec env EXAMPLES_SKIP_RUN=1 tools/check-examples-shared.sh "$@"
