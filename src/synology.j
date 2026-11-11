@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.25.0
+# pragma-jennifer-version: >=0.26.0
 # pragma-jennifer-capability: net
 
 /**
@@ -2157,7 +2157,7 @@ export func download(c as Client, path as string, maxBytes as int) {
         $contentType = strings.lower($r.headers["content-type"]);
     }
     if (strings.startsWith($contentType, "application/json")) {
-        def doc as json.Value init decodeReply(convert.stringFromBytes($r.body, "utf-8"), $what);
+        def doc as json.Value init decodeReply(convert.stringFromBytes("utf-8", $r.body), $what);
         dataOf($doc, $api, $what);
     }
     return $r.body;

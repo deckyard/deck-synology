@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.25.0
+# pragma-jennifer-version: >=0.26.0
 
 /**
  * White-box tests for synology: jennifer test src/synology_test.j
@@ -71,7 +71,7 @@ func serve(srv as httpd.Server, replies as list of Reply) {
         def sent as string init httpd.header($req, "Content-Type");
         def fields as map of string to string init {};
         if (strings.startsWith($sent, "application/x-www-form-urlencoded")) {
-            $fields = uri.parseQuery(convert.stringFromBytes($body, "utf-8"));
+            $fields = uri.parseQuery(convert.stringFromBytes("utf-8", $body));
         }
         $seen[] = Seen{
             method: httpd.method($req),
@@ -270,7 +270,7 @@ func testClientSettings() {
     testing.assertEqual($c.retries, 2);
     testing.assertEqual($c.pollMs, 50);
     testing.assertEqual($c.sessionName, "backup-job");
-    $c = withCaCert($c, convert.bytesFromString("PEM", "utf-8"));
+    $c = withCaCert($c, convert.bytesFromString("utf-8", "PEM"));
     testing.assertFalse($c.tls.skipVerify);
     def trusted as Client init withDeviceId($c, "dev-9", "ci");
     testing.assertEqual($trusted.deviceId, "dev-9");
@@ -720,8 +720,8 @@ func testCopyAndMove() {
 func testUploadSendsMultipart() {
     def f as Fake init fake([ok('{"blSkip":false,"file":"db.sql.gz","pid":1,"progress":100}')]);
     def payload as bytes init convert.bytesFromString(
-        "hello\r\n--not-a-boundary" + convert.fromCodepoint(0),
-        "utf-8");
+        "utf-8",
+        "hello\r\n--not-a-boundary" + convert.fromCodepoint(0));
     def path as string init upload(session($f), "/backup/db", "db.sql.gz", $payload, true);
     def seen as list of Seen init finish($f);
     testing.assertEqual($path, "/backup/db/db.sql.gz");
@@ -746,7 +746,7 @@ func testUploadSendsMultipart() {
 func testUploadFailure() {
     def f as Fake init fake([refused('{"code":1805}')]);
     try {
-        upload(session($f), "/backup", "a.txt", convert.bytesFromString("x", "utf-8"), false);
+        upload(session($f), "/backup", "a.txt", convert.bytesFromString("utf-8", "x"), false);
         missed();
     } catch (e) {
         testing.assertEqual(
@@ -767,7 +767,7 @@ func testDownload() {
     ]);
     def c as Client init session($f);
     def got as bytes init download($c, "/photo/2024", 0);
-    testing.assertEqual(convert.stringFromBytes($got, "utf-8"), $zip);
+    testing.assertEqual(convert.stringFromBytes("utf-8", $got), $zip);
     try {
         download($c, "/photo/missing.jpg", 0);
         missed();
@@ -1275,8 +1275,8 @@ func testCertificates() {
     ]);
     def c as Client init session($f);
     def all as list of Certificate init certificates($c);
-    def pem as bytes init convert.bytesFromString("PEM", "utf-8");
-    def none as bytes init convert.bytesFromString("", "utf-8");
+    def pem as bytes init convert.bytesFromString("utf-8", "PEM");
+    def none as bytes init convert.bytesFromString("utf-8", "");
     def id as string init importCertificate($c, $pem, $pem, $none, "ACME", "", true);
     setDefaultCertificate($c, $id);
     deleteCertificate($c, "Old789");
