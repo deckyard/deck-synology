@@ -15,6 +15,16 @@ updates, power, packages, services, scheduled tasks and Hyper Backup.
 Container Manager deploys Compose projects and runs containers. `call` reaches any other API under `/webapi`,
 and DSM's numeric error codes come back as readable messages.
 
+**Infrastructure as Code (IaC).** Users, groups, shared folders and their
+permissions, services, virtual machines and Compose projects can be
+provisioned from a Jennifer program kept in version control and reviewed like
+any other code. The create verbs are not idempotent: `createUser`,
+`createShare`, `createGuest` and `createProject` fail when the name exists. A
+re-runnable script lists what exists first (`users`, `shares`, `guests`,
+`projects`); `setUserPassword`, `setSharePermission` and `setService` can be
+applied again. There is no plan or diff step, and the deck does not detect
+drift.
+
 **[Documentation](https://deckyard.github.io/deck-synology/)**
 
 ## Install
@@ -45,7 +55,7 @@ $c = synology.logout($c);
 
 ## Requirements
 
-Jennifer 0.25.0 or newer, the default `jennifer` binary (not
+Jennifer 0.26.0 or newer, the default `jennifer` binary (not
 `jennifer-tiny`), and the `net` capability. DSM 6.2 or newer; DSM 7 is the
 main target, and Container Manager needs DSM 7.2.
 

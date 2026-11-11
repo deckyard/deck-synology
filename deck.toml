@@ -7,7 +7,7 @@ authors = ["mplx <mplx@jennifer-lang.dev>"]
 # The deck talks to a DSM host over HTTPS, so it opens sockets. No `exec`:
 # it shells out to nothing. No `sql`.
 capabilities = ["net"]
-keywords = ["synology", "dsm", "nas", "filestation", "homelab", "storage", "docker", "virtualization", "api"]
+keywords = ["synology", "dsm", "nas", "filestation", "homelab", "storage", "docker", "virtualization", "api", "iac"]
 
 [package.urls]
 deck = "https://raw.githubusercontent.com/deckyard/deck-synology/main/deck.toml"
@@ -16,4 +16,4 @@ manual = "https://deckyard.github.io/deck-synology/"
 
 # Only the default binary: `jennifer-tiny` has no `net` capability.
 [engines]
-jennifer = ">=0.25.0"
+jennifer = ">=0.26.0"

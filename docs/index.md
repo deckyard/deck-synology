@@ -14,6 +14,16 @@ permissions, and administration: certificates, snapshots, health, DSM
 updates, power, packages, services, the Task Scheduler and Hyper Backup;
 and Container Manager: containers, images and Compose projects.
 
+**Infrastructure as Code (IaC).** Users, groups, shared folders and their
+permissions, services, virtual machines and Compose projects can be
+provisioned from a Jennifer program kept in version control and reviewed like
+any other code. The create verbs are not idempotent: `createUser`,
+`createShare`, `createGuest` and `createProject` fail when the name exists. A
+re-runnable script lists what exists first (`users`, `shares`, `guests`,
+`projects`); `setUserPassword`, `setSharePermission` and `setService` can be
+applied again. There is no plan or diff step, and the deck does not detect
+drift.
+
 ## Conventions
 
 Snippets assume this import:
@@ -50,6 +60,6 @@ every API shares. The undocumented APIs get only the shared ones.
 
 ## Requirements
 
-Jennifer 0.25.0 or newer, the default `jennifer` binary, and the `net`
+Jennifer 0.26.0 or newer, the default `jennifer` binary, and the `net`
 capability. DSM 6.2 or newer; DSM 7 is the main target, and Container
 Manager needs DSM 7.2.
