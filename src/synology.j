@@ -14,8 +14,10 @@
  * Manager (virtual machines, images, power).
  *
  * A NAS usually presents a self-signed certificate: trust it with
- * `withCaCert`, or turn checking off with `withInsecure`. Every failure is
- * `Error{kind: "synology"}`; DSM's numeric error codes are translated.
+ * `withCaCert`, or turn checking off with `withInsecure`. Every failure is a
+ * `SynologyError` (kind `"synology"`); DSM's numeric error codes are
+ * translated in the message and kept in its `code` field. A download over
+ * `maxBytes`, or a reply over its size cap, is kind `"limit"`.
  *
  * @module synology
  * @see https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf
@@ -733,8 +735,44 @@ def const FILE_ERRORS as map of string to string init {
     "1805": "can't overwrite or skip the existing file"
 };
 
+/**
+ * A failed request or a refused value. Every error of kind `"synology"` is
+ * one, so its fields are safe to read once the kind matches.
+ *
+ * @field kind {string} always `"synology"` (`ERROR_KIND`)
+ * @field message {string} `synology: ` and what failed, e.g. `SYNO.FileStation.List getinfo: no such file or directory (code 408)`
+ * @field status {int} the HTTP status of a reply that was not 2xx; 0 otherwise
+ * @field code {int} DSM's error code (`error.code`, or the entry's code for a File Station entry); 0 when DSM gave none
+ */
+export def struct SynologyError {
+    kind as string,
+    message as string,
+    status as int,
+    code as int
+};
+
 func fail(message as string) {
-    throw Error{kind: ERROR_KIND, message: "synology: " + $message};
+    failWith($message, 0, 0);
+}
+
+# failWith throws the SynologyError of a refusal, with its HTTP status and DSM code.
+func failWith(message as string, status as int, code as int) {
+    throw SynologyError{
+        kind: ERROR_KIND,
+        message: "synology: " + $message,
+        status: $status,
+        code: $code
+    };
+}
+
+# failTransport throws the error of a request that got no usable answer: a
+# reached cap (a `maxBytes` or `http` body cap) stays kind "limit", anything
+# else is a SynologyError; the message is `synology: <what>: <cause>` either way.
+func failTransport(what as string, e as Error) {
+    if ($e.kind == "limit") {
+        throw Error{kind: "limit", message: "synology: " + $what + ": " + $e.message};
+    }
+    fail($what + ": " + $e.message);
 }
 
 # How much of a string an error message repeats.
@@ -827,7 +865,7 @@ func baseUrl(address as string) {
  * @param address {string} host name, `host:port` or a full `https://` URL
  * @return {Client} the client; full certificate checking, session
  *   `FileStation`, 1 s task polling
- * @throws {Error} kind `"synology"` when the address is empty
+ * @throws {SynologyError} kind `"synology"` when the address is empty
  * @example
  *   def c as synology.Client init synology.client("nas.example.com");
  */
@@ -905,8 +943,8 @@ export func withPollInterval(c as Client, ms as int) {
 
 /**
  * Set how long `copy`, `move`, `delete`, `createGuest` and `createImage`
- * wait for their background task before they fail. The task itself goes on
- * in DSM.
+ * wait for their background task before they fail with an `Error` of kind
+ * `"timeout"`. The task itself goes on in DSM.
  *
  * @param c {Client} the client
  * @param ms {int} milliseconds; 0 for the default, 1 hour
@@ -924,7 +962,7 @@ export func withWaitTimeout(c as Client, ms as int) {
  * @param c {Client} the client
  * @param name {string} letters, digits, `_`, `.` and `-`
  * @return {Client} the changed copy
- * @throws {Error} kind `"synology"` on another character
+ * @throws {SynologyError} kind `"synology"` on another character
  */
 export func withSessionName(c as Client, name as string) {
     if (not regex.matches("^[A-Za-z0-9_.-]+$", $name)) {
@@ -941,7 +979,7 @@ export func withSessionName(c as Client, name as string) {
  * @param sid {string} the session id
  * @param synoToken {string} its `synotoken`, or "" when there is none
  * @return {Client} the changed copy
- * @throws {Error} kind `"synology"` when either holds control characters
+ * @throws {SynologyError} kind `"synology"` when either holds control characters
  */
 export func withSession(c as Client, sid as string, synoToken as string) {
     if (regex.matches("[\\x00-\\x1f\\x7f]", $sid + $synoToken)) {
@@ -1017,13 +1055,17 @@ func waitLimit(c as Client) {
  * @param what {string} the request that started it, for the error message
  * @param taskId {string} the task
  * @param started {time.Time} when the wait began
- * @throws {Error} kind `"synology"` when the time is up
+ * @throws {Error} kind `"timeout"` when the time is up: a deadline, the generic
+ *   kind any library raises for one
  */
 func checkWaited(c as Client, what as string, taskId as string, started as time.Time) {
     def limit as int init waitLimit($c);
     if (time.milliseconds(time.sub(time.now(), $started)) >= $limit) {
-        fail($what + ": task " + shown($taskId) + " still running after " +
-            convert.toString($limit) + " ms");
+        throw Error{
+            kind: "timeout",
+            message: "synology: " + $what + ": task " + shown($taskId) + " still running after " +
+                convert.toString($limit) + " ms"
+        };
     }
 }
 
@@ -1067,7 +1109,7 @@ func requestHeaders(c as Client) {
  * @param form {map of string to string} the fields, `api` and `method` included
  * @param readOnly {bool} whether the request may be retried
  * @return {json.Value} the whole reply
- * @throws {Error} kind `"synology"` on a network failure, a status that is
+ * @throws {SynologyError} kind `"synology"` on a network failure, a status that is
  *   not 2xx or a reply that is not JSON
  */
 func postForm(c as Client, cgi as string, form as map of string to string, readOnly as bool) {
@@ -1083,10 +1125,10 @@ func postForm(c as Client, cgi as string, form as map of string to string, readO
             uri.buildQuery($form),
             optionsFor($c, $readOnly));
     } catch (e) {
-        fail($what + ": " + $e.message);
+        failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
-        fail($what + ": " + statusLine($r.status, $r.statusText));
+        failWith($what + ": " + statusLine($r.status, $r.statusText), $r.status, 0);
     }
     return decodeReply($r.body, $what);
 }
@@ -1118,11 +1160,11 @@ func decodeReply(body as string, what as string) {
  * @param api {string} the API, which decides what its codes mean
  * @param what {string} the request, for the error message
  * @return {json.Value} `data`; JSON `null` when there is none
- * @throws {Error} kind `"synology"` when the reply says `success: false`
+ * @throws {SynologyError} kind `"synology"` when the reply says `success: false`
  */
 func dataOf(doc as json.Value, api as string, what as string) {
     if (not json.asBool($doc, "/success")) {
-        fail($what + ": " + failureText($doc, $api));
+        failWith($what + ": " + failureText($doc, $api), 0, number($doc, "/error/code"));
     }
     if (not json.has($doc, "/data")) {
         return json.decode("null");
@@ -1254,7 +1296,7 @@ func queryApis(c as Client, query as string) {
  *
  * @param c {Client} the client
  * @return {Client} the copy that knows them
- * @throws {Error} kind `"synology"` when the host does not answer as DSM
+ * @throws {SynologyError} kind `"synology"` when the host does not answer as DSM
  */
 export func discover(c as Client) {
     $c.apis = queryApis($c, KNOWN_APIS);
@@ -1271,7 +1313,7 @@ export func discover(c as Client) {
  * @param c {Client} the client
  * @param api {string} e.g. `SYNO.Core.System`
  * @return {ApiInfo} the API
- * @throws {Error} kind `"synology"` when the host does not have it
+ * @throws {SynologyError} kind `"synology"` when the host does not have it
  */
 export func apiInfo(c as Client, api as string) {
     if (maps.has($c.apis, $api)) {
@@ -1404,7 +1446,7 @@ func request(
  * @param method {string} e.g. `info`
  * @param params {map of string to string} the parameters; `{}` for none
  * @return {json.Value} the reply's `data`; JSON `null` when there is none
- * @throws {Error} kind `"synology"` when the host lacks the API or version,
+ * @throws {SynologyError} kind `"synology"` when the host lacks the API or version,
  *   on a network failure, or when DSM reports an error
  * @example
  *   def u as json.Value init synology.call($c, "SYNO.Core.System.Utilization", 1, "get", {});
@@ -1465,8 +1507,14 @@ func authenticate(
     try {
         $data = request($c, "SYNO.API.Auth", 6, 3, "login", $params, false);
     } catch (e) {
-        if (strings.contains($e.message, "(code 403)")) {
-            throw Error{kind: ERROR_KIND, message: $e.message + "; use loginOtp"};
+        # DSM code 403: the account needs a one-time code
+        if ($e.kind == ERROR_KIND and $e.code == 403) {
+            throw SynologyError{
+                kind: ERROR_KIND,
+                message: $e.message + "; use loginOtp",
+                status: $e.status,
+                code: $e.code
+            };
         }
         throw $e;
     }
@@ -1499,7 +1547,7 @@ func finishLogin(c as Client, data as json.Value) {
  *
  * @param c {Client} the client
  * @return {Client} the copy holding the token
- * @throws {Error} kind `"synology"` when the session is gone, or as `call`
+ * @throws {SynologyError} kind `"synology"` when the session is gone, or as `call`
  */
 export func refreshToken(c as Client) {
     def d as json.Value init request($c, "SYNO.API.Auth", 6, 6, "token", {}, true);
@@ -1517,7 +1565,7 @@ export func refreshToken(c as Client) {
  * @param account {string} the DSM account
  * @param password {string} its password
  * @return {Client} the copy holding the session
- * @throws {Error} kind `"synology"` when the login is refused, or when the
+ * @throws {SynologyError} kind `"synology"` when the login is refused, or when the
  *   account needs a 2-step code (use `loginOtp`)
  * @example
  *   $c = synology.login($c, "backup", "secret");
@@ -1537,7 +1585,7 @@ export func login(c as Client, account as string, password as string) {
  * @param code {string} the current code from the authenticator
  * @param deviceName {string} a name for this device, or "" to trust nothing
  * @return {Client} the copy holding the session
- * @throws {Error} kind `"synology"` when the login or the code is refused
+ * @throws {SynologyError} kind `"synology"` when the login or the code is refused
  */
 export func loginOtp(
     c as Client,
@@ -1559,7 +1607,7 @@ export func loginOtp(
  *
  * @param c {Client} the client
  * @return {Client} the copy without a session
- * @throws {Error} kind `"synology"` when DSM refuses
+ * @throws {SynologyError} kind `"synology"` when DSM refuses
  */
 export func logout(c as Client) {
     if ($c.sid == "") {
@@ -1576,7 +1624,7 @@ export func logout(c as Client) {
  *
  * @param c {Client} the client
  * @return {SystemInfo} the summary
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func info(c as Client) {
     def d as json.Value init request($c, "SYNO.DSM.Info", 2, 1, "getinfo", {}, true);
@@ -1671,7 +1719,7 @@ func fileFrom(d as json.Value, p as string) {
  *
  * @param c {Client} the client
  * @return {list of Share} the shares
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func shares(c as Client) {
     def out as list of Share init [];
@@ -1713,7 +1761,7 @@ export func shares(c as Client) {
  * @param c {Client} the client
  * @param folder {string} e.g. `/photo/2024`
  * @return {list of File} the entries
- * @throws {Error} kind `"synology"` on a bad path, a missing folder or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad path, a missing folder or as `call`
  * @example
  *   for (def f in synology.files($c, "/photo")) {
  *       io.printf("%s\n", $f.path);
@@ -1785,7 +1833,7 @@ func entryCode(doc as json.Value) {
  * @param c {Client} the client
  * @param path {string} e.g. `/photo/a.jpg`
  * @return {File} the entry
- * @throws {Error} kind `"synology"` when it does not exist or as `call`
+ * @throws {SynologyError} kind `"synology"` when it does not exist or as `call`
  */
 export func stat(c as Client, path as string) {
     def p as string init checkPath($path);
@@ -1793,7 +1841,10 @@ export func stat(c as Client, path as string) {
     def d as json.Value init dataOf($doc, "SYNO.FileStation.List", "SYNO.FileStation.List getinfo");
     def code as int init entryCode($doc);
     if ($code != 0) {
-        fail("SYNO.FileStation.List getinfo: " + $p + ": " + coded("SYNO.FileStation.List", $code));
+        failWith(
+            "SYNO.FileStation.List getinfo: " + $p + ": " + coded("SYNO.FileStation.List", $code),
+            0,
+            $code);
     }
     if (len(items($d, "/files")) == 0) {
         fail("SYNO.FileStation.List getinfo: no entry for " + $p);
@@ -1807,7 +1858,7 @@ export func stat(c as Client, path as string) {
  * @param c {Client} the client
  * @param path {string} e.g. `/photo/a.jpg`
  * @return {bool} whether it exists
- * @throws {Error} kind `"synology"` on a bad path or any other failure
+ * @throws {SynologyError} kind `"synology"` on a bad path or any other failure
  */
 export func exists(c as Client, path as string) {
     def p as string init checkPath($path);
@@ -1823,7 +1874,10 @@ export func exists(c as Client, path as string) {
         return false;
     }
     if ($code != 0) {
-        fail("SYNO.FileStation.List getinfo: " + $p + ": " + coded("SYNO.FileStation.List", $code));
+        failWith(
+            "SYNO.FileStation.List getinfo: " + $p + ": " + coded("SYNO.FileStation.List", $code),
+            0,
+            $code);
     }
     return true;
 }
@@ -1836,7 +1890,7 @@ export func exists(c as Client, path as string) {
  * @param parents {bool} create missing parent folders too; an existing
  *   folder is then no error
  * @return {File} the folder
- * @throws {Error} kind `"synology"` on a bad path or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path or when DSM refuses
  */
 export func mkdir(c as Client, path as string, parents as bool) {
     def p as string init checkPath($path);
@@ -1868,7 +1922,7 @@ export func mkdir(c as Client, path as string, parents as bool) {
  * @param path {string} what to rename
  * @param name {string} the new name, without a folder
  * @return {File} the renamed entry
- * @throws {Error} kind `"synology"` on a bad path or name or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path or name or when DSM refuses
  */
 export func rename(c as Client, path as string, name as string) {
     def p as string init checkPath($path);
@@ -1902,7 +1956,7 @@ export func rename(c as Client, path as string, name as string) {
  * @param version {int} the version it was started with
  * @param taskId {string} the id `start` returned
  * @return {json.Value} the last status
- * @throws {Error} kind `"synology"` when the task reports errors or the
+ * @throws {SynologyError} kind `"synology"` when the task reports errors or the
  *   time runs out
  */
 func waitFor(c as Client, spec as ApiInfo, version as int, taskId as string) {
@@ -1952,7 +2006,7 @@ func runTask(c as Client, api as string, wanted as int, params as map of string 
  *
  * @param c {Client} the client
  * @param path {string} what to delete
- * @throws {Error} kind `"synology"` on a bad path or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path or when DSM refuses
  */
 export func delete(c as Client, path as string) {
     def p as string init checkPath($path);
@@ -2001,7 +2055,7 @@ func transfer(
  * @param overwrite {bool} replace an existing entry of the same name; when
  *   false, an existing one is an error
  * @return {string} the path of the copy
- * @throws {Error} kind `"synology"` on a bad path or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path or when DSM refuses
  */
 export func copy(c as Client, path as string, folder as string, overwrite as bool) {
     return transfer($c, $path, $folder, $overwrite, false);
@@ -2016,7 +2070,7 @@ export func copy(c as Client, path as string, folder as string, overwrite as boo
  * @param overwrite {bool} replace an existing entry of the same name; when
  *   false, an existing one is an error
  * @return {string} the new path
- * @throws {Error} kind `"synology"` on a bad path or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path or when DSM refuses
  */
 export func move(c as Client, path as string, folder as string, overwrite as bool) {
     return transfer($c, $path, $folder, $overwrite, true);
@@ -2032,7 +2086,7 @@ export func move(c as Client, path as string, folder as string, overwrite as boo
  * @param overwrite {bool} replace an existing file; when false, an existing
  *   one is an error
  * @return {string} the file's path
- * @throws {Error} kind `"synology"` on a bad path or name, a network failure
+ * @throws {SynologyError} kind `"synology"` on a bad path or name, a network failure
  *   or when DSM refuses
  * @example
  *   synology.upload($c, "/backup", "db.sql.gz", fs.readBytes("db.sql.gz"), true);
@@ -2098,10 +2152,10 @@ func postParts(
             0,
             $c.tls);
     } catch (e) {
-        fail($what + ": " + $e.message);
+        failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
-        fail($what + ": " + statusLine($r.status, $r.statusText));
+        failWith($what + ": " + statusLine($r.status, $r.statusText), $r.status, 0);
     }
     return dataOf(decodeReply($r.body, $what), $spec.name, $what);
 }
@@ -2114,8 +2168,9 @@ func postParts(
  * @param maxBytes {int} the largest reply accepted; 0 for 64 MiB, negative
  *   for no limit
  * @return {bytes} the content
- * @throws {Error} kind `"synology"` on a bad path, a network failure, a
- *   reply over `maxBytes` or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad path, a network failure
+ *   or when DSM refuses
+ * @throws {Error} kind `"limit"` for a reply over `maxBytes`
  */
 export func download(c as Client, path as string, maxBytes as int) {
     def p as string init checkPath($path);
@@ -2146,10 +2201,10 @@ export func download(c as Client, path as string, maxBytes as int) {
             $maxBytes,
             $c.tls);
     } catch (e) {
-        fail($what + ": " + $e.message);
+        failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
-        fail($what + ": " + statusLine($r.status, $r.statusText));
+        failWith($what + ": " + statusLine($r.status, $r.statusText), $r.status, 0);
     }
     # A refusal comes as a JSON reply instead of the file.
     def contentType as string init "";
@@ -2257,7 +2312,7 @@ func guestFrom(d as json.Value, p as string) {
  *
  * @param c {Client} the client
  * @return {list of Guest} the virtual machines
- * @throws {Error} kind `"synology"` when Virtual Machine Manager is not
+ * @throws {SynologyError} kind `"synology"` when Virtual Machine Manager is not
  *   installed, or as `call`
  * @example
  *   for (def g in synology.guests($c)) {
@@ -2279,7 +2334,7 @@ export func guests(c as Client) {
  * @param c {Client} the client
  * @param name {string} its name
  * @return {Guest} the virtual machine
- * @throws {Error} kind `"synology"` when there is none of that name, or as
+ * @throws {SynologyError} kind `"synology"` when there is none of that name, or as
  *   `call`
  */
 export func guest(c as Client, name as string) {
@@ -2298,7 +2353,7 @@ export func guest(c as Client, name as string) {
  * @param what {string} the request that started it, for the error message
  * @param start {json.Value} the `data` of the request that started it
  * @return {json.Value} the finished task's `task_info`
- * @throws {Error} kind `"synology"` when the reply has no task id or the
+ * @throws {SynologyError} kind `"synology"` when the reply has no task id or the
  *   time runs out
  */
 func waitVm(c as Client, what as string, start as json.Value) {
@@ -2335,7 +2390,7 @@ func waitVm(c as Client, what as string, start as json.Value) {
  * @param c {Client} the client
  * @param spec {GuestSpec} what to create
  * @return {Guest} the new virtual machine
- * @throws {Error} kind `"synology"` on a bad name, a disk without a size or
+ * @throws {SynologyError} kind `"synology"` on a bad name, a disk without a size or
  *   image, or when Virtual Machine Manager refuses
  * @example
  *   def spec as synology.GuestSpec init synology.GuestSpec{
@@ -2415,7 +2470,7 @@ func setGuest(c as Client, name as string, changes as map of string to string) {
  * @param name {string} its name
  * @param vcpus {int} virtual CPUs; 0 to keep them
  * @param ramMb {int} memory in MiB; 0 to keep it
- * @throws {Error} kind `"synology"` when Virtual Machine Manager refuses
+ * @throws {SynologyError} kind `"synology"` when Virtual Machine Manager refuses
  */
 export func resizeGuest(c as Client, name as string, vcpus as int, ramMb as int) {
     def changes as map of string to string init {};
@@ -2437,7 +2492,7 @@ export func resizeGuest(c as Client, name as string, vcpus as int, ramMb as int)
  * @param c {Client} the client
  * @param name {string} its name
  * @param newName {string} the new name
- * @throws {Error} kind `"synology"` on a bad name, or when the name is taken
+ * @throws {SynologyError} kind `"synology"` on a bad name, or when the name is taken
  *   (code 403)
  */
 export func renameGuest(c as Client, name as string, newName as string) {
@@ -2450,7 +2505,7 @@ export func renameGuest(c as Client, name as string, newName as string) {
  * @param c {Client} the client
  * @param name {string} its name
  * @param mode {string} `off`, `last` (the state it was in) or `on`
- * @throws {Error} kind `"synology"` on another mode, or when Virtual Machine
+ * @throws {SynologyError} kind `"synology"` on another mode, or when Virtual Machine
  *   Manager refuses
  */
 export func setAutorun(c as Client, name as string, mode as string) {
@@ -2467,7 +2522,7 @@ export func setAutorun(c as Client, name as string, mode as string) {
  *
  * @param c {Client} the client
  * @param name {string} its name
- * @throws {Error} kind `"synology"` when it is running (code 904), or as
+ * @throws {SynologyError} kind `"synology"` when it is running (code 904), or as
  *   `call`
  */
 export func deleteGuest(c as Client, name as string) {
@@ -2479,7 +2534,7 @@ export func deleteGuest(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @param name {string} its name
- * @throws {Error} kind `"synology"` when the host lacks CPU or memory (codes
+ * @throws {SynologyError} kind `"synology"` when the host lacks CPU or memory (codes
  *   902, 903), or as `call`
  */
 export func powerOnGuest(c as Client, name as string) {
@@ -2492,7 +2547,7 @@ export func powerOnGuest(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @param name {string} its name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func shutdownGuest(c as Client, name as string) {
     vmm(
@@ -2508,7 +2563,7 @@ export func shutdownGuest(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @param name {string} its name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func powerOffGuest(c as Client, name as string) {
     vmm(
@@ -2524,7 +2579,7 @@ export func powerOffGuest(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @return {list of VmHost} the hosts
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func vmHosts(c as Client) {
     def d as json.Value init vmm($c, "Host", "list", {}, true);
@@ -2548,7 +2603,7 @@ export func vmHosts(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of VmStorage} the storages
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func vmStorages(c as Client) {
     def d as json.Value init vmm($c, "Storage", "list", {}, true);
@@ -2573,7 +2628,7 @@ export func vmStorages(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of VmNetwork} the networks
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func vmNetworks(c as Client) {
     def d as json.Value init vmm($c, "Network", "list", {}, true);
@@ -2592,7 +2647,7 @@ export func vmNetworks(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of VmImage} the images
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func vmImages(c as Client) {
     def d as json.Value init vmm($c, "Guest.Image", "list", {}, true);
@@ -2622,7 +2677,7 @@ export func vmImages(c as Client) {
  *   `/vm/debian-12.qcow2`
  * @param storages {list of string} the names of the storages to keep it on
  * @return {string} the new image's id
- * @throws {Error} kind `"synology"` on a bad name, type or path, or when
+ * @throws {SynologyError} kind `"synology"` on a bad name, type or path, or when
  *   Virtual Machine Manager refuses
  */
 export func createImage(
@@ -2663,7 +2718,7 @@ export func createImage(
  *
  * @param c {Client} the client
  * @param name {string} the image's name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func deleteImage(c as Client, name as string) {
     vmm($c, "Guest.Image", "delete", {"image_name": checkLabel($name, "image")}, false);
@@ -2749,7 +2804,7 @@ def const USER_FIELDS as list of string init ["description", "email", "expired"]
  *
  * @param c {Client} the client
  * @return {list of User} the accounts, by name
- * @throws {Error} kind `"synology"` when the account may not, or as `call`
+ * @throws {SynologyError} kind `"synology"` when the account may not, or as `call`
  */
 export func users(c as Client) {
     def params as map of string to string init {
@@ -2774,7 +2829,7 @@ export func users(c as Client) {
  * @param c {Client} the client
  * @param name {string} the account name
  * @return {User} the account
- * @throws {Error} kind `"synology"` when there is none, or as `call`
+ * @throws {SynologyError} kind `"synology"` when there is none, or as `call`
  */
 export func user(c as Client, name as string) {
     def params as map of string to string init {
@@ -2799,7 +2854,7 @@ export func user(c as Client, name as string) {
  * @param description {string} the description; "" for none
  * @param email {string} the e-mail address; "" for none
  * @return {User} the new account
- * @throws {Error} kind `"synology"` on a bad name or an empty password, or
+ * @throws {SynologyError} kind `"synology"` on a bad name or an empty password, or
  *   when DSM refuses
  */
 export func createUser(
@@ -2849,7 +2904,7 @@ func setUser(c as Client, name as string, changes as map of string to string) {
  * @param c {Client} the client
  * @param name {string} the account name
  * @param password {string} the new password
- * @throws {Error} kind `"synology"` on an empty password, or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on an empty password, or when DSM refuses
  */
 export func setUserPassword(c as Client, name as string, password as string) {
     if ($password == "") {
@@ -2865,7 +2920,7 @@ export func setUserPassword(c as Client, name as string, password as string) {
  * @param c {Client} the client
  * @param name {string} the account name
  * @param enabled {bool} whether it may log in
- * @throws {Error} kind `"synology"` when DSM refuses
+ * @throws {SynologyError} kind `"synology"` when DSM refuses
  */
 export func setUserEnabled(c as Client, name as string, enabled as bool) {
     def expired as string init "now";
@@ -2881,7 +2936,7 @@ export func setUserEnabled(c as Client, name as string, enabled as bool) {
  *
  * @param c {Client} the client
  * @param name {string} the account name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func deleteUser(c as Client, name as string) {
     core($c, "SYNO.Core.User", "delete", {"name": checkLabel($name, "user")}, false);
@@ -2892,7 +2947,7 @@ export func deleteUser(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @return {list of Group} the groups
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func groups(c as Client) {
     def params as map of string to string init {
@@ -2919,7 +2974,7 @@ export func groups(c as Client) {
  * @param c {Client} the client
  * @param group {string} the group
  * @return {list of string} the account names
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func groupMembers(c as Client, group as string) {
     def params as map of string to string init {
@@ -2963,7 +3018,7 @@ func changeMembers(c as Client, group as string, add as list of string, remove a
  * @param c {Client} the client
  * @param group {string} the group, e.g. `administrators`
  * @param names {list of string} the accounts
- * @throws {Error} kind `"synology"` on a bad name, or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad name, or when DSM refuses
  */
 export func addToGroup(c as Client, group as string, names as list of string) {
     changeMembers($c, $group, $names, []);
@@ -2975,7 +3030,7 @@ export func addToGroup(c as Client, group as string, names as list of string) {
  * @param c {Client} the client
  * @param group {string} the group
  * @param names {list of string} the accounts
- * @throws {Error} kind `"synology"` on a bad name, or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on a bad name, or when DSM refuses
  */
 export func removeFromGroup(c as Client, group as string, names as list of string) {
     changeMembers($c, $group, [], $names);
@@ -2989,7 +3044,7 @@ export func removeFromGroup(c as Client, group as string, names as list of strin
  * @param volume {string} the volume, e.g. `/volume1`
  * @param description {string} the description; "" for none
  * @return {string} the share's File Station path, e.g. `/backup`
- * @throws {Error} kind `"synology"` on a bad name or volume, or when DSM
+ * @throws {SynologyError} kind `"synology"` on a bad name or volume, or when DSM
  *   refuses
  */
 export func createShare(c as Client, name as string, volume as string, description as string) {
@@ -3015,7 +3070,7 @@ export func createShare(c as Client, name as string, volume as string, descripti
  *
  * @param c {Client} the client
  * @param name {string} the share name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func deleteShare(c as Client, name as string) {
     core($c, "SYNO.Core.Share", "delete", {"name": checkLabel($name, "share")}, false);
@@ -3045,7 +3100,7 @@ func principalType(kind as string) {
  * @param share {string} the share name
  * @param kind {string} `user` for local users, `group` for local groups
  * @return {list of SharePermission} every user or group, with its access
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func sharePermissions(c as Client, share as string, kind as string) {
     def out as list of SharePermission init [];
@@ -3090,7 +3145,7 @@ export func sharePermissions(c as Client, share as string, kind as string) {
  * @param kind {string} `user` or `group`
  * @param name {string} the user or group
  * @param access {string} `rw`, `ro`, `deny` or `none`
- * @throws {Error} kind `"synology"` on another access, or when DSM refuses
+ * @throws {SynologyError} kind `"synology"` on another access, or when DSM refuses
  */
 export func setSharePermission(
     c as Client,
@@ -3144,7 +3199,7 @@ func certificateFrom(d as json.Value, p as string) {
  *
  * @param c {Client} the client
  * @return {list of Certificate} the certificates
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func certificates(c as Client) {
     def d as json.Value init coreAt($c, "SYNO.Core.Certificate.CRT", 1, "list", {}, true);
@@ -3167,7 +3222,7 @@ export func certificates(c as Client) {
  *   services; "" for a new one
  * @param asDefault {bool} make it the default certificate
  * @return {string} the certificate's id
- * @throws {Error} kind `"synology"` when the key or certificate is missing,
+ * @throws {SynologyError} kind `"synology"` when the key or certificate is missing,
  *   or when DSM refuses them
  * @example
  *   def key as bytes init fs.readBytes("privkey.pem");
@@ -3213,7 +3268,7 @@ export func importCertificate(
  *
  * @param c {Client} the client
  * @param id {string} the certificate's id
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func setDefaultCertificate(c as Client, id as string) {
     def params as map of string to string init {
@@ -3229,7 +3284,7 @@ export func setDefaultCertificate(c as Client, id as string) {
  *
  * @param c {Client} the client
  * @param id {string} the certificate's id
- * @throws {Error} kind `"synology"` when a service still uses it, or as `call`
+ * @throws {SynologyError} kind `"synology"` when a service still uses it, or as `call`
  */
 export func deleteCertificate(c as Client, id as string) {
     def params as map of string to string init {
@@ -3245,7 +3300,7 @@ export func deleteCertificate(c as Client, id as string) {
  * @param id {string} the certificate's id
  * @param service {string} the service's name as DSM shows it, e.g.
  *   `DSM Desktop Service` or `FTPS`
- * @throws {Error} kind `"synology"` when no certificate lists the service,
+ * @throws {SynologyError} kind `"synology"` when no certificate lists the service,
  *   or as `call`
  */
 export func assignCertificate(c as Client, id as string, service as string) {
@@ -3286,7 +3341,7 @@ export func assignCertificate(c as Client, id as string, service as string) {
  * @param c {Client} the client
  * @param share {string} the share name
  * @return {list of Snapshot} the snapshots
- * @throws {Error} kind `"synology"` when the share is not on Btrfs, or as
+ * @throws {SynologyError} kind `"synology"` when the share is not on Btrfs, or as
  *   `call`
  */
 export func snapshots(c as Client, share as string) {
@@ -3318,7 +3373,7 @@ export func snapshots(c as Client, share as string) {
  * @param description {string} the description; "" for none
  * @param lock {bool} keep it from automatic removal
  * @return {string} the snapshot's name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func createSnapshot(c as Client, share as string, description as string, lock as bool) {
     def snapinfo as json.Value init json.set(json.decode('{}'), "/desc", $description);
@@ -3337,7 +3392,7 @@ export func createSnapshot(c as Client, share as string, description as string, 
  * @param c {Client} the client
  * @param share {string} the share name
  * @param name {string} the snapshot's name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func deleteSnapshot(c as Client, share as string, name as string) {
     def params as map of string to string init {
@@ -3352,7 +3407,7 @@ export func deleteSnapshot(c as Client, share as string, name as string) {
  *
  * @param c {Client} the client
  * @return {Utilization} the figures
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func utilization(c as Client) {
     def d as json.Value init coreAt($c, "SYNO.Core.System.Utilization", 0, "get", {}, true);
@@ -3389,7 +3444,7 @@ func storageInfo(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Volume} the volumes
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func volumes(c as Client) {
     def d as json.Value init storageInfo($c);
@@ -3412,7 +3467,7 @@ export func volumes(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Disk} the drives
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func disks(c as Client) {
     def d as json.Value init storageInfo($c);
@@ -3435,7 +3490,7 @@ export func disks(c as Client) {
  * Restart the NAS. The session ends with it.
  *
  * @param c {Client} the client
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func reboot(c as Client) {
     coreAt($c, "SYNO.Core.System", 0, "reboot", {}, false);
@@ -3445,7 +3500,7 @@ export func reboot(c as Client) {
  * Turn the NAS off.
  *
  * @param c {Client} the client
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func shutdown(c as Client) {
     coreAt($c, "SYNO.Core.System", 0, "shutdown", {}, false);
@@ -3456,7 +3511,7 @@ export func shutdown(c as Client) {
  *
  * @param c {Client} the client
  * @return {DsmUpdate} what is on offer
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func checkUpdate(c as Client) {
     def d as json.Value init coreAt($c, "SYNO.Core.Upgrade.Server", 0, "check", {}, true);
@@ -3472,7 +3527,7 @@ export func checkUpdate(c as Client) {
  *
  * @param c {Client} the client
  * @return {list of Package} the packages
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func packages(c as Client) {
     def params as map of string to string init {"additional": '["status"]'};
@@ -3508,7 +3563,7 @@ func controlPackage(c as Client, id as string, action as string) {
  *
  * @param c {Client} the client
  * @param id {string} the package id, e.g. `ContainerManager`
- * @throws {Error} kind `"synology"` on a bad id, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad id, or as `call`
  */
 export func startPackage(c as Client, id as string) {
     controlPackage($c, $id, "start");
@@ -3519,7 +3574,7 @@ export func startPackage(c as Client, id as string) {
  *
  * @param c {Client} the client
  * @param id {string} the package id
- * @throws {Error} kind `"synology"` on a bad id, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad id, or as `call`
  */
 export func stopPackage(c as Client, id as string) {
     controlPackage($c, $id, "stop");
@@ -3551,7 +3606,7 @@ func serviceOf(service as string) {
  * @param c {Client} the client
  * @param service {string} `ssh`, `smb` or `nfs`
  * @return {bool} whether it is on
- * @throws {Error} kind `"synology"` on another service, or as `call`
+ * @throws {SynologyError} kind `"synology"` on another service, or as `call`
  */
 export func serviceEnabled(c as Client, service as string) {
     def which as list of string init serviceOf($service);
@@ -3564,7 +3619,7 @@ export func serviceEnabled(c as Client, service as string) {
  * @param c {Client} the client
  * @param service {string} `ssh`, `smb` or `nfs`
  * @param enabled {bool} whether it is on
- * @throws {Error} kind `"synology"` on another service, or as `call`
+ * @throws {SynologyError} kind `"synology"` on another service, or as `call`
  */
 export func setService(c as Client, service as string, enabled as bool) {
     def which as list of string init serviceOf($service);
@@ -3576,7 +3631,7 @@ export func setService(c as Client, service as string, enabled as bool) {
  *
  * @param c {Client} the client
  * @return {list of ScheduledTask} the tasks
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func scheduledTasks(c as Client) {
     def out as list of ScheduledTask init [];
@@ -3629,7 +3684,7 @@ func taskList(job as ScheduledTask, extra as map of string to bool) {
  *
  * @param c {Client} the client
  * @param job {ScheduledTask} the task, from `scheduledTasks`
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func runScheduledTask(c as Client, job as ScheduledTask) {
     coreAt($c, "SYNO.Core.TaskScheduler", 2, "run", {"tasks": taskList($job, {})}, false);
@@ -3641,7 +3696,7 @@ export func runScheduledTask(c as Client, job as ScheduledTask) {
  * @param c {Client} the client
  * @param job {ScheduledTask} the task, from `scheduledTasks`
  * @param enabled {bool} whether it runs on its schedule
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func setScheduledTaskEnabled(c as Client, job as ScheduledTask, enabled as bool) {
     def params as map of string to string init {"status": taskList($job, {"enable": $enabled})};
@@ -3654,7 +3709,7 @@ export func setScheduledTaskEnabled(c as Client, job as ScheduledTask, enabled a
  * @param c {Client} the client
  * @param job {ScheduledTask} the task
  * @return {list of TaskResult} the runs
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func taskResults(c as Client, job as ScheduledTask) {
     def params as map of string to string init {"id": convert.toString($job.id)};
@@ -3702,7 +3757,7 @@ func backupFrom(d as json.Value, p as string) {
  * @param c {Client} the client
  * @return {list of BackupTask} the tasks; `lastResult` and the times come
  *   with `backupStatus`
- * @throws {Error} kind `"synology"` when Hyper Backup is not installed, or as
+ * @throws {SynologyError} kind `"synology"` when Hyper Backup is not installed, or as
  *   `call`
  */
 export func backupTasks(c as Client) {
@@ -3729,7 +3784,7 @@ def const BACKUP_FIELDS as list of string init [
  * @param c {Client} the client
  * @param id {int} the task id
  * @return {BackupTask} the task
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func backupStatus(c as Client, id as int) {
     def params as map of string to string init {
@@ -3748,7 +3803,7 @@ export func backupStatus(c as Client, id as int) {
  *
  * @param c {Client} the client
  * @param id {int} the task id
- * @throws {Error} kind `"synology"` when it is not in a state to back up, or
+ * @throws {SynologyError} kind `"synology"` when it is not in a state to back up, or
  *   as `call`
  */
 export func runBackup(c as Client, id as int) {
@@ -3773,7 +3828,7 @@ func checkContainer(name as string) {
  *
  * @param c {Client} the client
  * @return {list of Container} the containers
- * @throws {Error} kind `"synology"` when Container Manager is not installed,
+ * @throws {SynologyError} kind `"synology"` when Container Manager is not installed,
  *   or as `call`
  */
 export func containers(c as Client) {
@@ -3798,7 +3853,7 @@ export func containers(c as Client) {
  * @param c {Client} the client
  * @param name {string} the container name
  * @return {json.Value} the data
- * @throws {Error} kind `"synology"` when there is none, or as `call`
+ * @throws {SynologyError} kind `"synology"` when there is none, or as `call`
  */
 export func inspectContainer(c as Client, name as string) {
     return coreAt($c, "SYNO.Docker.Container", 0, "get", {"name": checkContainer($name)}, true);
@@ -3820,7 +3875,7 @@ func controlContainer(c as Client, name as string, action as string) {
  *
  * @param c {Client} the client
  * @param name {string} the container name
- * @throws {Error} kind `"synology"` on a bad name, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad name, or as `call`
  */
 export func startContainer(c as Client, name as string) {
     controlContainer($c, $name, "start");
@@ -3831,7 +3886,7 @@ export func startContainer(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @param name {string} the container name
- * @throws {Error} kind `"synology"` on a bad name, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad name, or as `call`
  */
 export func stopContainer(c as Client, name as string) {
     controlContainer($c, $name, "stop");
@@ -3842,7 +3897,7 @@ export func stopContainer(c as Client, name as string) {
  *
  * @param c {Client} the client
  * @param name {string} the container name
- * @throws {Error} kind `"synology"` on a bad name, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad name, or as `call`
  */
 export func restartContainer(c as Client, name as string) {
     controlContainer($c, $name, "restart");
@@ -3854,7 +3909,7 @@ export func restartContainer(c as Client, name as string) {
  * @param c {Client} the client
  * @param name {string} the container name
  * @param force {bool} delete it even while it runs
- * @throws {Error} kind `"synology"` when it runs and `force` is false, or as
+ * @throws {SynologyError} kind `"synology"` when it runs and `force` is false, or as
  *   `call`
  */
 export func deleteContainer(c as Client, name as string, force as bool) {
@@ -3872,7 +3927,7 @@ export func deleteContainer(c as Client, name as string, force as bool) {
  * @param name {string} the container name
  * @param limit {int} how many lines, at least 1
  * @return {list of LogLine} the lines
- * @throws {Error} kind `"synology"` on a bad name or limit, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad name or limit, or as `call`
  */
 export func containerLogs(c as Client, name as string, limit as int) {
     if ($limit < 1) {
@@ -3918,7 +3973,7 @@ func checkImage(repository as string, tag as string) {
  *
  * @param c {Client} the client
  * @return {list of ContainerImage} the images
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func containerImages(c as Client) {
     def params as map of string to string init {"limit": "-1", "offset": "0", "show_dsm": "false"};
@@ -3948,7 +4003,7 @@ export func containerImages(c as Client) {
  * @param c {Client} the client
  * @param repository {string} e.g. `caddy`
  * @param tag {string} e.g. `alpine`
- * @throws {Error} kind `"synology"` on a bad name, or as `call`
+ * @throws {SynologyError} kind `"synology"` on a bad name, or as `call`
  */
 export func pullContainerImage(c as Client, repository as string, tag as string) {
     checkImage($repository, $tag);
@@ -3962,7 +4017,7 @@ export func pullContainerImage(c as Client, repository as string, tag as string)
  * @param c {Client} the client
  * @param repository {string} e.g. `caddy`
  * @param tag {string} e.g. `alpine`
- * @throws {Error} kind `"synology"` when a container uses it, or as `call`
+ * @throws {SynologyError} kind `"synology"` when a container uses it, or as `call`
  */
 export func deleteContainerImage(c as Client, repository as string, tag as string) {
     checkImage($repository, $tag);
@@ -4009,7 +4064,7 @@ func checkProject(id as string) {
  *
  * @param c {Client} the client
  * @return {list of Project} the projects, by name
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func projects(c as Client) {
     def d as json.Value init coreAt($c, "SYNO.Docker.Project", 0, "list", {}, true);
@@ -4035,7 +4090,7 @@ export func projects(c as Client) {
  * @param c {Client} the client
  * @param id {string} the project id
  * @return {Project} the project
- * @throws {Error} kind `"synology"` when there is none, or as `call`
+ * @throws {SynologyError} kind `"synology"` when there is none, or as `call`
  */
 export func project(c as Client, id as string) {
     def d as json.Value init coreAt(
@@ -4059,7 +4114,7 @@ export func project(c as Client, id as string) {
  *   `/docker/app`
  * @param compose {string} the content of `compose.yaml`
  * @return {string} the project id
- * @throws {Error} kind `"synology"` on a bad name or path, an empty file, or
+ * @throws {SynologyError} kind `"synology"` on a bad name or path, an empty file, or
  *   when Container Manager refuses
  * @example
  *   def yaml as string init fs.readString("compose.yaml");
@@ -4106,7 +4161,7 @@ func controlProject(c as Client, id as string, action as string) {
  *
  * @param c {Client} the client
  * @param id {string} the project id
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func buildProject(c as Client, id as string) {
     controlProject($c, $id, "build");
@@ -4117,7 +4172,7 @@ export func buildProject(c as Client, id as string) {
  *
  * @param c {Client} the client
  * @param id {string} the project id
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func startProject(c as Client, id as string) {
     controlProject($c, $id, "start");
@@ -4128,7 +4183,7 @@ export func startProject(c as Client, id as string) {
  *
  * @param c {Client} the client
  * @param id {string} the project id
- * @throws {Error} kind `"synology"` as `call`
+ * @throws {SynologyError} kind `"synology"` as `call`
  */
 export func stopProject(c as Client, id as string) {
     controlProject($c, $id, "stop");
@@ -4140,7 +4195,7 @@ export func stopProject(c as Client, id as string) {
  * @param c {Client} the client
  * @param id {string} the project id
  * @param keepFiles {bool} keep the project's folder and `compose.yaml`
- * @throws {Error} kind `"synology"` while it runs, or as `call`
+ * @throws {SynologyError} kind `"synology"` while it runs, or as `call`
  */
 export func deleteProject(c as Client, id as string, keepFiles as bool) {
     def params as map of string to string init {

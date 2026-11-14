@@ -42,7 +42,7 @@ synology.delete($c, "/backup/2023");
 
 `copy`, `move` and `delete` start a background task on the NAS and wait until
 it is done, checking every second (`withPollInterval`) for at most an hour
-(`withWaitTimeout`); when the time runs out the call fails and the task goes
+(`withWaitTimeout`); when the time runs out the call fails with kind `"timeout"` and the task goes
 on in DSM. With `overwrite` false, an entry of the same name in the destination is an error, never a
 silent skip. `delete` removes a folder with everything in it.
 
@@ -55,5 +55,5 @@ fs.writeBytes("restored.sql.gz", $data);
 ```
 
 `upload` creates missing folders. Both hold the whole file in memory.
-`download` refuses a reply larger than its limit, 64 MiB with 0; pass a
-larger one for big files. A folder downloads as a zip archive.
+`download` refuses a reply larger than its limit, 64 MiB with 0, with an
+error of kind `"limit"`; pass a larger one for big files. A folder downloads as a zip archive.

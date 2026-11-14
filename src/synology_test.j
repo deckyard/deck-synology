@@ -229,10 +229,10 @@ func formOf(s as Seen, key as string) {
  * The message of the deck's error a request fails with, "" when it passes.
  * Each test names what it calls; there are no closures.
  *
- * @param e {Error} the error
+ * @param e {SynologyError} the error
  * @return {string} its message
  */
-func messageOf(e as Error) {
+func messageOf(e as SynologyError) {
     testing.assertEqual($e.kind, ERROR_KIND);
     return $e.message;
 }
@@ -426,6 +426,9 @@ func testLoginNeedsTheCode() {
             messageOf($e),
             "synology: SYNO.API.Auth login: 2-step verification code required (code 403); " +
                 "use loginOtp");
+        # the DSM code is a field: no need to read it out of the message
+        testing.assertEqual($e.code, 403);
+        testing.assertEqual($e.status, 0);
     }
     try {
         login($c, "admin", "x");
@@ -654,14 +657,17 @@ func testWaitsGiveUp() {
         delete($c, "/backup/old");
         missed();
     } catch (e) {
-        testing.assertContains(messageOf($e), "SYNO.FileStation.Delete: task \"t1\" still running");
-        testing.assertContains(messageOf($e), "after 100 ms");
+        # the wait limit is a deadline: kind "timeout", not "synology"
+        testing.assertEqual($e.kind, "timeout");
+        testing.assertContains($e.message, "SYNO.FileStation.Delete: task \"t1\" still running");
+        testing.assertContains($e.message, "after 100 ms");
     }
     try {
         createImage($c, "x", "iso", "/vm/x.iso", ["s"]);
         missed();
     } catch (e) {
-        testing.assertContains(messageOf($e), "Guest.Image create: task \"t2\" still running");
+        testing.assertEqual($e.kind, "timeout");
+        testing.assertContains($e.message, "Guest.Image create: task \"t2\" still running");
     }
     finish($f);
 }
@@ -775,6 +781,7 @@ func testDownload() {
         testing.assertEqual(
             messageOf($e),
             "synology: SYNO.FileStation.Download download: no such file or directory (code 408)");
+        testing.assertEqual($e.code, 408);
     }
     def seen as list of Seen init finish($f);
     testing.assertEqual(formOf($seen[0], "path"), '["/photo/2024"]');
@@ -1627,4 +1634,36 @@ func testProjectsSortByName() {
     finish($f);
     testing.assertEqual($all[0].name, "alpha");
     testing.assertEqual($all[1].name, "zeta");
+}
+
+# A download over maxBytes is kind "limit", with the request in front of the
+# cause; a local check carries neither a status nor a code.
+func testDownloadCapAndLocalFailures() {
+    def f as Fake init fake([
+        Reply{status: 200, contentType: "application/octet-stream", body: "0123456789"}
+    ]);
+    try {
+        download(session($f), "/photo/big.bin", 4);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "limit");
+        testing.assertTrue(strings.startsWith(
+            $e.message,
+            "synology: SYNO.FileStation.Download download: "));
+    }
+    finish($f);
+    try {
+        fail("a bad value");
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, ERROR_KIND);
+        testing.assertEqual($e.status, 0);
+        testing.assertEqual($e.code, 0);
+    }
+    try {
+        failWith("SYNO.DSM.Info getinfo: HTTP 502 Bad Gateway", 502, 0);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.status, 502);
+    }
 }

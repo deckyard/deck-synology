@@ -10,7 +10,8 @@ Every export of `@deckyard/synology`. Guides are listed in
 import "@deckyard/synology/" as synology;
 ```
 
-Every function that sends a request throws `Error{kind: "synology"}` when it
+Every function that sends a request throws a `SynologyError` (kind
+`"synology"`, with DSM's `code` and the HTTP `status`) when it
 fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
 
 ## Constants
@@ -22,6 +23,18 @@ fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
 | `PAGE_SIZE` | `1000` | entries `files` and `shares` ask for per request |
 
 ## Types
+
+### `SynologyError`
+
+Every error of kind `"synology"`. A download over `maxBytes`, or a reply over
+its size cap, is kind `"limit"` instead.
+
+| Field | Meaning |
+|---|---|
+| `kind as string` | always `"synology"` |
+| `message as string` | `synology: <API> <method>: <meaning> (code <n>)`, or what went wrong |
+| `status as int` | the HTTP status of a reply that was not 2xx; 0 otherwise |
+| `code as int` | DSM's error code (`error.code`, or a File Station entry's); 0 when DSM gave none |
 
 ### `Client`
 

@@ -50,7 +50,8 @@ run at the same time names of their own.
 
 ## 2-step verification
 
-An account with 2-step verification refuses `login` with code 403. Log in
+An account with 2-step verification refuses `login` with code 403 (the
+error's `code` field). Log in
 with the current code instead; with a device name, DSM trusts the device and
 hands out an id that skips the code next time:
 

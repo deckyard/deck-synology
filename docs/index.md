@@ -44,8 +44,10 @@ File Station paths start with the shared folder: `/photo/2024/a.jpg`, not
 
 ## Errors
 
-Every failure is `Error{kind: "synology"}`. The message names the API and
-method, and translates DSM's numeric code:
+Every failure is a `synology.SynologyError` (kind `"synology"`). The message
+names the API and method, and translates DSM's numeric code; the code itself
+is the `code` field (0 when DSM gave none), and an HTTP status other than 2xx
+is the `status` field:
 
 ```text
 synology: SYNO.FileStation.List getinfo: /photo/b.jpg: no such file or directory (code 408)
@@ -56,7 +58,23 @@ synology: SYNO.DSM.Info getinfo: session timeout (code 106); log in again
 Codes from 400 up mean different things per API (400 is a wrong password for
 `SYNO.API.Auth`, a bad parameter for File Station); the deck knows the codes
 of the Auth, File Station and Virtual Machine Manager guides and the ones
-every API shares. The undocumented APIs get only the shared ones.
+every API shares. The undocumented APIs get only the shared ones. Branch on
+the field, not on the message:
+
+```jennifer
+try {
+    $c = synology.login($c, "admin", $password);
+} catch (e) {
+    if ($e.kind == "synology" and $e.code == 403) {
+        $c = synology.loginOtp($c, "admin", $password, askForCode(), "");
+    } else {
+        throw $e;
+    }
+}
+```
+
+A download over its `maxBytes`, or a reply over its size cap, is kind `"limit"`
+(a plain `Error`).
 
 ## Requirements
 
