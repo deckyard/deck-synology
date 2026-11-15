@@ -44,7 +44,8 @@ File Station paths start with the shared folder: `/photo/2024/a.jpg`, not
 
 ## Errors
 
-Every failure is a `synology.SynologyError` (kind `"synology"`). The message
+Every failure DSM reports, and every refusal of the deck's own, is a
+`synology.SynologyError` (kind `"synology"`). The message
 names the API and method, and translates DSM's numeric code; the code itself
 is the `code` field (0 when DSM gave none), and an HTTP status other than 2xx
 is the `status` field:
@@ -74,7 +75,9 @@ try {
 ```
 
 A download over its `maxBytes`, or a reply over its size cap, is kind `"limit"`
-(a plain `Error`).
+(a plain `Error`). A host that cannot be reached (connection refused or reset,
+DNS, TLS) is a `net.NetError` (kind `"net"`), passed on unchanged: its
+`reason` says why, and `sent` false means DSM never got the request.
 
 ## Requirements
 

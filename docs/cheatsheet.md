@@ -27,7 +27,8 @@ fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
 ### `SynologyError`
 
 Every error of kind `"synology"`. A download over `maxBytes`, or a reply over
-its size cap, is kind `"limit"` instead.
+its size cap, is kind `"limit"` instead, and a host that cannot be reached is
+a `net.NetError` (kind `"net"`).
 
 | Field | Meaning |
 |---|---|

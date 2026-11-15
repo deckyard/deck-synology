@@ -10,6 +10,7 @@
  * hands back what it received.
  */
 use httpd;
+use net;
 use task;
 use testing;
 
@@ -1665,5 +1666,48 @@ func testDownloadCapAndLocalFailures() {
         missed();
     } catch (e) {
         testing.assertEqual($e.status, 502);
+    }
+}
+
+/**
+ * Check a transport failure: the `net.NetError` of a refused connection,
+ * passed on with its fields.
+ *
+ * @param e {net.NetError} the caught error
+ */
+func assertRefused(e as net.NetError) {
+    testing.assertEqual($e.kind, "net");
+    testing.assertEqual($e.reason, "refused");
+    testing.assertEqual($e.op, "connect");
+    testing.assertFalse($e.sent);
+    testing.assertFalse($e.replied);
+}
+
+func testAnUnreachableHostIsANetError() {
+    def f as Fake init fake([]);
+    def c as Client init session($f);
+    finish($f);
+    # a closed loopback port refuses the connection
+    $c.url = "http://127.0.0.1:1";
+    try {
+        info($c);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        assertRefused($e);
+    }
+    try {
+        download($c, "/photo/a.jpg", 0);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        assertRefused($e);
+    }
+    try {
+        upload($c, "/photo", "a.txt", convert.bytesFromString("utf-8", "a"), false);
+        missed();
+    } catch (e) {
+        testing.assertEqual($e.kind, "net");
+        assertRefused($e);
     }
 }

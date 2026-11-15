@@ -17,7 +17,9 @@
  * `withCaCert`, or turn checking off with `withInsecure`. Every failure is a
  * `SynologyError` (kind `"synology"`); DSM's numeric error codes are
  * translated in the message and kept in its `code` field. A download over
- * `maxBytes`, or a reply over its size cap, is kind `"limit"`.
+ * `maxBytes`, or a reply over its size cap, is kind `"limit"`; a host that
+ * cannot be reached (refused, reset, DNS, TLS) is the `http` module's
+ * `net.NetError` (kind `"net"`), passed on unchanged.
  *
  * @module synology
  * @see https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf
@@ -768,6 +770,8 @@ func failWith(message as string, status as int, code as int) {
 # failTransport throws the error of a request that got no usable answer: a
 # reached cap (a `maxBytes` or `http` body cap) stays kind "limit", anything
 # else is a SynologyError; the message is `synology: <what>: <cause>` either way.
+# A net.NetError never gets here: the callers pass kind "net" on first, as a
+# struct is not accepted where `Error` is declared.
 func failTransport(what as string, e as Error) {
     if ($e.kind == "limit") {
         throw Error{kind: "limit", message: "synology: " + $what + ": " + $e.message};
@@ -1125,6 +1129,10 @@ func postForm(c as Client, cgi as string, form as map of string to string, readO
             uri.buildQuery($form),
             optionsFor($c, $readOnly));
     } catch (e) {
+        # a transport failure goes on as the net.NetError it is, fields intact
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
@@ -2152,6 +2160,10 @@ func postParts(
             0,
             $c.tls);
     } catch (e) {
+        # a transport failure goes on as the net.NetError it is, fields intact
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
@@ -2201,6 +2213,10 @@ export func download(c as Client, path as string, maxBytes as int) {
             $maxBytes,
             $c.tls);
     } catch (e) {
+        # a transport failure goes on as the net.NetError it is, fields intact
+        if ($e.kind == "net") {
+            throw $e;
+        }
         failTransport($what, $e);
     }
     if ($r.status < 200 or $r.status >= 300) {
