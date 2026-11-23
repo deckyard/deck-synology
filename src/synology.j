@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <mplx@jennifer-lang.dev>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -32,6 +32,7 @@
  *   $c = synology.logout($c);
  */
 use convert;
+use encoding;
 use json;
 use lists;
 use maps;
@@ -801,7 +802,7 @@ func plain(text as string, most as int) {
     def cut as string init $text;
     def more as string init "";
     if (len($text) > $most) {
-        $cut = strings.substring($text, 0, $most);
+        $cut = $text[..$most];
         $more = "...";
     }
     return regex.replace("[^ -~]", $cut, "?") + $more;
@@ -842,10 +843,10 @@ func baseUrl(address as string) {
         fail("the host is empty");
     }
     while (strings.endsWith($url, "/")) {
-        $url = strings.substring($url, 0, len($url) - 1);
+        $url = $url[..len($url) - 1];
     }
     if (strings.endsWith($url, "/webapi")) {
-        $url = strings.substring($url, 0, len($url) - len("/webapi"));
+        $url = $url[..len($url) - len("/webapi")];
     }
     if (strings.contains($url, "://")) {
         return $url;
@@ -1657,7 +1658,7 @@ export func info(c as Client) {
 func checkPath(path as string) {
     def p as string init $path;
     while (len($p) > 1 and strings.endsWith($p, "/")) {
-        $p = strings.substring($p, 0, len($p) - 1);
+        $p = $p[..len($p) - 1];
     }
     if (not strings.startsWith($p, "/") or $p == "/") {
         fail("a File Station path starts with /<share>, got " + shown($path));
@@ -1665,7 +1666,7 @@ func checkPath(path as string) {
     if (regex.matches("[\\x00-\\x1f\\x7f]", $p)) {
         fail("a path holds no control characters");
     }
-    for (def segment in strings.split(strings.substring($p, 1), "/")) {
+    for (def segment in strings.split($p[1..], "/")) {
         if ($segment == "" or $segment == "." or $segment == "..") {
             fail("a path has no empty, . or .. segments, got " + shown($path));
         }
@@ -1692,7 +1693,7 @@ func checkName(name as string) {
  * @return {string} the parent; for `/share/a` it is `/share`
  */
 func parentOf(path as string) {
-    return strings.substring($path, 0, strings.lastIndexOf($path, "/"));
+    return $path[..strings.lastIndexOf($path, "/")];
 }
 
 /**
@@ -1702,7 +1703,7 @@ func parentOf(path as string) {
  * @return {string} the name
  */
 func nameOf(path as string) {
-    return strings.substring($path, strings.lastIndexOf($path, "/") + 1);
+    return $path[strings.lastIndexOf($path, "/") + 1..];
 }
 
 /**
@@ -1902,7 +1903,7 @@ export func exists(c as Client, path as string) {
  */
 export func mkdir(c as Client, path as string, parents as bool) {
     def p as string init checkPath($path);
-    if (not strings.contains(strings.substring($p, 1), "/")) {
+    if (not strings.contains($p[1..], "/")) {
         fail("a shared folder is not created through File Station: " + $p);
     }
     def d as json.Value init request(
@@ -2018,7 +2019,7 @@ func runTask(c as Client, api as string, wanted as int, params as map of string 
  */
 export func delete(c as Client, path as string) {
     def p as string init checkPath($path);
-    if (not strings.contains(strings.substring($p, 1), "/")) {
+    if (not strings.contains($p[1..], "/")) {
         fail("a shared folder is not deleted through File Station: " + $p);
     }
     runTask($c, "SYNO.FileStation.Delete", 2, {"path": json.encode([$p]), "recursive": "true"});
@@ -2228,7 +2229,7 @@ export func download(c as Client, path as string, maxBytes as int) {
         $contentType = strings.lower($r.headers["content-type"]);
     }
     if (strings.startsWith($contentType, "application/json")) {
-        def doc as json.Value init decodeReply(convert.stringFromBytes("utf-8", $r.body), $what);
+        def doc as json.Value init decodeReply(encoding.decode("utf-8", $r.body), $what);
         dataOf($doc, $api, $what);
     }
     return $r.body;
