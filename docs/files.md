@@ -3,7 +3,7 @@
 
 # Files
 
-Everything here goes through File Station, so the account needs the File
+Everything here goes through File Station™, so the account needs the File
 Station application privilege and access to the shared folder.
 
 ## Shares and folders
@@ -28,7 +28,7 @@ if (not synology.exists($c, "/backup/2024")) {
 
 `mkdir` with `parents` true creates missing parent folders and accepts a
 folder that is already there. Shared folders themselves are created and
-deleted in DSM's Control Panel, not through File Station; the deck refuses a
+deleted in DSM™'s Control Panel, not through File Station; the deck refuses a
 path of one segment for `mkdir` and `delete`.
 
 ## Changing files

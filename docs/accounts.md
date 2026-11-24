@@ -4,8 +4,8 @@
 # Users, groups and shares
 
 These verbs use `SYNO.Core.User`, `SYNO.Core.Group`, `SYNO.Core.Share` and
-their companions. Synology does not document them; the deck sends what the
-DSM web interface and established clients send. The account needs to be an
+their companions. Synology™ does not document them; the deck sends what the
+DSM™ web interface and established clients send. The account needs to be an
 administrator.
 
 ## Accounts
@@ -36,6 +36,6 @@ for (def p in synology.sharePermissions($c, "backup", "user")) {
 
 `createShare` makes a share with its recycle bin on, for administrators
 only; anything else (encryption, quotas, snapshots) is a `call` away.
-`shares` lists them, as File Station sees them. An access is `rw`, `ro`,
+`shares` lists them, as File Station™ sees them. An access is `rw`, `ro`,
 `deny` or `none`; `deny` wins over what a group grants. `deleteShare`
 removes the folder and everything in it.

@@ -31,7 +31,7 @@ for (def t in synology.scheduledTasks($c)) {
 }
 ```
 
-The verbs take the `ScheduledTask` from `scheduledTasks`: DSM wants its id
+The verbs take the `ScheduledTask` from `scheduledTasks`: DSM™ wants its id
 with the account it runs as.
 
 ## Hyper Backup

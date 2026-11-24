@@ -3,8 +3,8 @@
 
 # Containers
 
-Container Manager (DSM 7.2 and newer) through `SYNO.Docker.*`, which
-Synology does not document; the deck sends what the DSM web interface and
+Container Manager™ (DSM™ 7.2 and newer) through `SYNO.Docker.*`, which
+Synology™ does not document; the deck sends what the DSM web interface and
 established clients send. The account needs to be an administrator.
 
 ## Deploying a Compose project
@@ -42,7 +42,7 @@ for (def line in synology.containerLogs($c, "web-caddy-1", 50)) {
 }
 ```
 
-`inspectContainer` returns Docker's inspect data as it is (`Config`,
+`inspectContainer` returns Docker™'s inspect data as it is (`Config`,
 `HostConfig`, `State`, ...). `deleteContainer` with `force` removes a
 running one.
 

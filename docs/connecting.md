@@ -6,7 +6,7 @@
 ## The address
 
 `client` takes a host name, `host:port` or a full URL. A bare host gets
-`https://` and port 5001, DSM's HTTPS port:
+`https://` and port 5001, DSM™'s HTTPS port:
 
 ```jennifer
 def c as synology.Client init synology.client("nas.example.com");    # https://nas.example.com:5001
@@ -85,7 +85,7 @@ someone logs in under the same name. Requests then fail with code 106, 107 or
 ## Any API
 
 `call` reaches what the typed verbs do not cover. Look the API up in
-Synology's developer guides or in the requests the DSM web interface makes:
+Synology™'s developer guides or in the requests the DSM web interface makes:
 
 ```jennifer
 def u as json.Value init synology.call($c, "SYNO.Core.System.Utilization", 1, "get", {});

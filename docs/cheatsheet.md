@@ -11,8 +11,8 @@ import "@deckyard/synology/" as synology;
 ```
 
 Every function that sends a request throws a `SynologyError` (kind
-`"synology"`, with DSM's `code` and the HTTP `status`) when it
-fails. A `path` or `folder` is a File Station path such as `/photo/2024`.
+`"synology"`, with DSM™'s `code` and the HTTP `status`) when it
+fails. A `path` or `folder` is a File Station™ path such as `/photo/2024`.
 
 ## Constants
 
@@ -494,7 +494,7 @@ a `net.NetError` (kind `"net"`).
 | `synology.runScheduledTask(c, job)` | | run one now |
 | `synology.setScheduledTaskEnabled(c, job, enabled)` | | turn its schedule on or off |
 | `synology.taskResults(c, job)` | `list of TaskResult` | its recent runs |
-| `synology.backupTasks(c)` | `list of BackupTask` | the Hyper Backup tasks |
+| `synology.backupTasks(c)` | `list of BackupTask` | the Hyper Backup™ tasks |
 | `synology.backupStatus(c, id)` | `BackupTask` | one task and its last run |
 | `synology.runBackup(c, id)` | | start a backup now |
 
@@ -503,7 +503,7 @@ a `net.NetError` (kind `"net"`).
 | Function | Returns | Does |
 |---|---|---|
 | `synology.containers(c)` | `list of Container` | the containers, running or not |
-| `synology.inspectContainer(c, name)` | `json.Value` | Docker's inspect data |
+| `synology.inspectContainer(c, name)` | `json.Value` | Docker™'s inspect data |
 | `synology.startContainer(c, name)` | | start one |
 | `synology.stopContainer(c, name)` | | stop one |
 | `synology.restartContainer(c, name)` | | restart one |

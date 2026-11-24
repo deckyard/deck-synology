@@ -4,15 +4,15 @@
 [![Documentation](https://img.shields.io/badge/docs-github%20pages-blue)](https://deckyard.github.io/deck-synology/)
 [![release](https://img.shields.io/github/v/release/deckyard/deck-synology)](https://github.com/deckyard/deck-synology/releases/latest)
 
-A client for the Synology DSM Web API, for
+A client for the Synology™ DSM™ Web API, for
 [Jennifer](https://jennifer-lang.dev/) programs: log in (with 2-step
 verification and trusted devices), read the system summary, work with
-File Station (shared folders, listing, creating, renaming, copying, moving,
+File Station™ (shared folders, listing, creating, renaming, copying, moving,
 deleting, upload and download), deploy and run virtual machines in Virtual
 Machine Manager, manage local users, groups, shared folders and their
 permissions, and administer the NAS: certificates, snapshots, health,
-updates, power, packages, services, scheduled tasks and Hyper Backup.
-Container Manager deploys Compose projects and runs containers. `call` reaches any other API under `/webapi`,
+updates, power, packages, services, scheduled tasks and Hyper Backup™.
+Container Manager™ deploys Compose projects and runs containers. `call` reaches any other API under `/webapi`,
 and DSM's numeric error codes come back as readable messages.
 
 **Infrastructure as Code (IaC).** Users, groups, shared folders and their
@@ -74,3 +74,12 @@ LGPL-3.0-only, see [LICENSE](LICENSE). Copyright (C) 2026 mplx &lt;mplx@jennifer
 
 `tools/check-headers.sh` checks every source file's SPDX header against
 `deck.toml`.
+
+## Trademarks
+
+Synology™, DSM™, File Station™, Hyper Backup™ and Container Manager™ are
+trademarks of Synology Inc. Docker™ is a trademark of Docker, Inc. Other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Synology
+Inc. or Docker, Inc.

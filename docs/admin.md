@@ -3,8 +3,8 @@
 
 # Administration
 
-These verbs use APIs Synology does not document (`SYNO.Core.*`,
-`SYNO.Storage.CGI.Storage`); the deck sends what the DSM web interface and
+These verbs use APIs Synology™ does not document (`SYNO.Core.*`,
+`SYNO.Storage.CGI.Storage`); the deck sends what the DSM™ web interface and
 established clients send. The account needs to be an administrator.
 
 ## Health

@@ -4,7 +4,7 @@
 # Virtual machines
 
 The `SYNO.Virtualization.API.*` verbs drive Virtual Machine Manager, as
-Synology's Virtual Machine Manager API guide describes it. The account needs
+Synology™'s Virtual Machine Manager API guide describes it. The account needs
 to administer VMM. A virtual machine, image, storage or network is named by
 its name, as in the VMM interface.
 

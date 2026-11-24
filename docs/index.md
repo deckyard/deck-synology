@@ -3,16 +3,16 @@
 
 # @deckyard/synology
 
-A client for the [Synology DSM](https://www.synology.com/dsm) Web API. `call`
+A client for the [Synology™ DSM™](https://www.synology.com/dsm) Web API. `call`
 reaches any API under `/webapi` and returns the reply's `data` as a
 `json.Value`. Typed verbs cover logging in (with 2-step verification and
-trusted devices), the system summary, File Station (shared folders,
+trusted devices), the system summary, File Station™ (shared folders,
 listing, creating, renaming, copying, moving and deleting, upload and
 download), Virtual Machine Manager (images, creating, powering and resizing
 virtual machines), local users, groups and shared folders with their
 permissions, and administration: certificates, snapshots, health, DSM
-updates, power, packages, services, the Task Scheduler and Hyper Backup;
-and Container Manager: containers, images and Compose projects.
+updates, power, packages, services, the Task Scheduler and Hyper Backup™;
+and Container Manager™: containers, images and Compose projects.
 
 **Infrastructure as Code (IaC).** Users, groups, shared folders and their
 permissions, services, virtual machines and Compose projects can be
@@ -84,3 +84,12 @@ DNS, TLS) is a `net.NetError` (kind `"net"`), passed on unchanged: its
 Jennifer 0.27.0 or newer, the default `jennifer` binary, and the `net`
 capability. DSM 6.2 or newer; DSM 7 is the main target, and Container
 Manager needs DSM 7.2.
+
+## Trademarks
+
+Synology™, DSM™, File Station™, Hyper Backup™ and Container Manager™ are
+trademarks of Synology Inc. Docker™ is a trademark of Docker, Inc. Other
+product and company names may be trademarks of their respective owners. They
+are used only to identify the products this deck works with. This deck is an
+independent project, not affiliated with, sponsored or endorsed by Synology
+Inc. or Docker, Inc.

@@ -5,12 +5,12 @@
 
 ## Scope
 
-`@deckyard/synology` is a client for the Synology DSM Web API (`/webapi`,
+`@deckyard/synology` is a client for the Synology™ DSM™ Web API (`/webapi`,
 HTTPS, port 5001 by default). It covers login with 2-step codes and trusted
-devices, the system summary, File Station (shares, listing, folders, rename,
+devices, the system summary, File Station™ (shares, listing, folders, rename,
 copy, move, delete, upload, download), Virtual Machine Manager, users, groups,
 shares and permissions, certificates, snapshots, health, updates, power,
-packages, services, scheduled tasks, Hyper Backup and Container Manager
+packages, services, scheduled tasks, Hyper Backup™ and Container Manager™
 (containers, images, Compose projects). `call` reaches any other API.
 
 Not in scope:
