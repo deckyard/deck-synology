@@ -81,7 +81,7 @@ DNS, TLS) is a `net.NetError` (kind `"net"`), passed on unchanged: its
 
 ## Requirements
 
-Jennifer 0.27.0 or newer, the default `jennifer` binary, and the `net`
+Jennifer 0.28.0 or newer, the default `jennifer` binary, and the `net`
 capability. DSM 6.2 or newer; DSM 7 is the main target, and Container
 Manager needs DSM 7.2.
 
